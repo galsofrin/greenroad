@@ -66,7 +66,7 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>DevOps Demo App</title>
+      <title>GreenRoad DevOps Demo App</title>
       <style>
         body {
           font-family: Arial, sans-serif;
@@ -119,7 +119,7 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <h1>🚀 DevOps Demo Application</h1>
+        <h1>🚀GreenRoad  DevOps Demo Application</h1>
         <p>A simple interactive Node.js app with monitoring and CI/CD</p>
         
         <div class="stats" id="stats">
