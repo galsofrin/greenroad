@@ -1,0 +1,75 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-north-1
+  ECR_REPOSITORY: 809809881598.dkr.ecr.eu-north-1.amazonaws.com/greenroad-app
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        working-directory: ./app
+        run: |
+          docker build -t $ECR_REPOSITORY:${{ github.sha }} -t $ECR_REPOSITORY:latest .
+          docker push $ECR_REPOSITORY:${{ github.sha }}
+          docker push $ECR_REPOSITORY:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/key.pem
+          chmod 600 ~/.ssh/key.pem
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Minikube
+        run: |
+          ssh -i ~/.ssh/key.pem ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+            
+            echo "=== Starting Deployment ==="
+            
+            # Login to ECR
+            aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin 809809881598.dkr.ecr.eu-north-1.amazonaws.com
+            
+            # Pull latest image
+            docker pull 809809881598.dkr.ecr.eu-north-1.amazonaws.com/greenroad-app:latest
+            
+            # Remove old image from Minikube and load new one
+            minikube image rm 809809881598.dkr.ecr.eu-north-1.amazonaws.com/greenroad-app:latest 2>/dev/null || true
+            minikube image load 809809881598.dkr.ecr.eu-north-1.amazonaws.com/greenroad-app:latest
+            
+            # Restart deployment to pick up new image
+            kubectl rollout restart deployment/greenroad
+            
+            # Wait for rollout
+            kubectl rollout status deployment/greenroad --timeout=120s
+            
+            # Restart port forwards
+            sudo systemctl restart greenroad-portforward || true
+            
+            echo "=== Deployment Complete ==="
+            kubectl get pods
+          EOF
